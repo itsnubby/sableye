@@ -3,7 +3,7 @@ sensor.py - A pretty generic superclass for sensors.
 sableye - sensor interface
 Public:
     * Sensor(Device)
-modified : 4/16/2020
+modified : 4/17/2020
   ) 0 o .
 """
 try:
@@ -41,15 +41,45 @@ class Sensor(Device):
         """
         raise NotImplementedError
 
-    def start_stream(self, options):
+    def _stream_single(self):
+        """
+        <placeholder>
+        """
+        raise NotImplementedError
+
+    def _stream_continuous(self):
+        """
+        <placeholder>
+        """
+        raise NotImplementedError
+
+    def _stream_timelapse(self, frequency=1):
+        """
+        <placeholder>
+        """
+        raise NotImplementedError
+
+    def start_stream(self, options={}):
         """
         Open the stream.
-        :in: options {dict}
+        :in: options {dict} - 
+            supported: {mode: [single, continuous, timelapse],
+                        frequency: (int)}   # samples per day
         :out: success (Bool)
         """
         success = True
-        self._start_thread(self._stream(), name='streaming')
-        self.status = 'streaming'
+        try:
+            mode = options['mode']
+        finally:
+            mode = 'single'     # <-- Change default stream mode here.
+        if mode=='single':
+            self._start_thread(self._stream_single, 'streaming')
+        elif mode=='continuous':
+            self._start_thread(self._stream_single, 'streaming')
+        elif mode=='timelapse':
+            self._start_thread(self._stream_timelapse, 'streaming', args=(options['frequency']))
+        else:
+            success = False
         # TODO: Auto-generate logs of changes of state.
         return success
 

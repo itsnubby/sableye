@@ -3,10 +3,10 @@ device.py - A generic as HECK device superclass.
 sableye - sensor interface
 Public:
     * Device(object)
-modified : 4/16/2020
+modified : 4/17/2020
   ) 0 o .
 """
-import os, time, datetime, json, threading
+import os, time, datetime, json, threading, multiprocessing
 import subprocess as sp
 try:
     from .squawk import say
@@ -88,6 +88,88 @@ class Device(object):
         self.active_threads = []
         self.active_processes = []
 
+    def _start_process(self, target, name, args=(), kwargs={}):
+        """
+        Get them wheels turning.
+        :in: target (*funk)
+        :in: args (*)
+        :in: kwargs {*}
+        :out: success (Bool)
+        """
+        process = multiprocessing.Process(target=target, args=args, kwargs=kwargs)
+        process.start()
+        if process.is_alive():
+            self.active_processes.append(process)
+            return True
+        return False
+
+    def _start_thread(self, target, name, args=(), kwargs={}):
+        """
+        Get them wheels turning.
+        :in: target (*funk)
+        :in: args (*)
+        :in: kwargs {*}
+        :out: success (Bool)
+        """
+        thread = threading.Thread(target=target, name=name, args=args, kwargs=kwargs)
+        thread.start()
+        if thread.isAlive():
+            self.active_threads.append(thread)
+            return True
+        return False
+
+    def _kill_process(self):
+        """
+        Terminate all active processes broh.
+        """
+        _timeout = 15   # <-- Set thread termination timeout (s) here.
+        _attempts = 2   # <-- Set number of attempts here.
+        for attempt in range(1,_attempts+1):
+            say(' '.join(['Attempt #',str(attempt),': waiting for',thread.name,'to terminate']))
+            process.join([_timeout])
+            if not process.is_alive():
+                say(' '.join([process.name,'terminated']), 'success')
+                self.active_processes.remove(process)
+                return True
+        return False
+
+    def _kill_processes(self):
+        """
+        Terminate all active processes broh.
+        """
+        while len(self.active_processes) > 0:
+            for process in self.active_processes:
+                if not self._kill_process(process):
+                    continue
+        return True
+
+    def _kill_thread(self, thread):
+        """
+        Terminate a thread.
+        :in: thread (*Thread)
+        :out: success (Bool)
+        """
+        _timeout = 15   # <-- Set thread termination timeout (s) here.
+        _attempts = 2   # <-- Set number of attempts here.
+        for attempt in range(1,_attempts+1):
+            say(' '.join(['Attempt #',str(attempt),': waiting for',thread.name,'to terminate']))
+            thread.join([_timeout])
+            if not thread.isAlive():
+                say(' '.join([thread.name,'terminated']), 'success')
+                self.active_threads.remove(thread)
+                return True
+        return False
+
+    def _kill_threads(self):
+        """
+        Terminate all active threads broh.
+        """
+        while len(self.active_threads) > 0:
+            for thread in self.active_threads:
+                if not self._kill_thread(thread):
+                    continue
+        return True
+
     def _fill_info(self):
         """
         Chat up the device to find where it lives as well
@@ -107,6 +189,7 @@ class Device(object):
         """
         # 'generic' if not redefined!
         return 'generic'
+
     def _connect(self):
         """
         <placeholder>
@@ -133,36 +216,6 @@ class Device(object):
         <placeholder>
         """
         raise NotImplementedError
-
-    def _start_process(self, target, options=[]):
-        """
-        Get them wheels turning.
-        :in: target (*funk)
-        :in: options [*]
-        :out: process (*process)
-        """
-        return None
-
-    def _start_thread(self, target, name, options=[]):
-        """
-        Get them wheels turning.
-        :in: target (*funk)
-        :in: options [*]
-        :out: thread (*thread)
-        """
-        thread = threading.Thread(target, args=options, name=name)
-        self.active_threads.append(thread)
-        return thread
-
-    def _kill_processes(self):
-        return True
-
-    def _kill_threads(self):
-        for thread in self.active_threads:
-            say(' '.join(['Waiting for',thread.name,'to terminate']))
-            while(thread.is_alive()):
-                time.sleep(0.1)
-        return True
 
     def set_file_path(self, path_base):
         """
@@ -218,8 +271,9 @@ class Device(object):
         """
         Close down shop.
         """
+        self._kill_threads()
+        self._kill_processes()
+        self._disconnect()
         self.status = 'sleeping'
         return True
-
-
 
