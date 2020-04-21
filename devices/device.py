@@ -17,7 +17,8 @@ except:
 ## Global declarations or something.
 _EPOCH = datetime.datetime(1970,1,1)
 _DEVICE_STATES = [
-        'sleeping']
+        'sleeping',
+        'standing_by']
 _SUPPORT_TABLE = {
         'interface': [
             'opencv',
@@ -60,7 +61,7 @@ def _check_supported(options):
                 supported = False
                 break
         return supported
-    finally:
+    except:
         raise Exception
 
 
@@ -68,25 +69,32 @@ class Device(object):
     """
     Your one-stop-shop for device communications.
     """
-    def __init__(self, address, interface):
+    def __init__(self, label, address, interface):
         """
         To inherit:
-            * redefine _query_info and _get_device_id appropriately.
+            * redefine _fill_info and _get_device_id appropriately.
             * call this __init__ from the child Device.
         :in: device_address
         :in: serial_number
         :in: device_type
+        :in: label (int) Unique ID
         """
         assert(_check_supported({'interface': interface}))
         self.address = address
         self.interface = interface
-        self.id = self._get_device_id()
+        self.id = self._get_device_id(label)
         self.status = 'sleeping'
         self.base_path = './'
 
         self.info = {}
         self.active_threads = []
         self.active_processes = []
+
+    def __str__(self):
+        try:
+            return str(self.id)
+        except:
+            return 'device'
 
     def _start_process(self, target, name, args=(), kwargs={}):
         """
@@ -182,19 +190,20 @@ class Device(object):
                 'id': self.id
             }
 
-    def _get_device_id(self):
+    def _get_device_id(self, label):
         """
         Hunt down the device ID.
+        :in: label (int) Unique ID
         :out: id (str)
         """
         # 'generic' if not redefined!
-        return 'generic'
+        return '-'.join(['generic',str(label)])
 
     def _connect(self):
         """
-        <placeholder>
+        Change status here.
         """
-        raise NotImplementedError
+        self.status = 'standing_by'
 #        channel = None
 #        try:
 #            if self.interface == 'serial':
@@ -202,14 +211,14 @@ class Device(object):
 #            elif interface == 'i2c':
 #                channel = smbus.SMBus(address)
 #            return channel
-#        finally:
+#        except:
 #            raise Exception
 
     def _disconnect(self):
         """
-        <placeholder>
+        Change status here.
         """
-        raise NotImplementedError
+        self.status = 'sleeping'
 
     def _test_connection(self, options={}):
         """
@@ -261,11 +270,26 @@ class Device(object):
         :out: success (Bool)
         """
         # TODO: Add options currently supported.
+        self.connected = False
         self._fill_info()
-        self.channel = self._connect()
-        if(_test_connection(options)):
-            return True
-        return False
+        self._connect()
+        try:
+            attempts_max = options['attempts']
+        except:
+            attempts_max = 5
+        attempt_num = 1
+        while attempt_num < attempts_max:
+            if self._test_connection():
+                self.connected = True
+                break
+            say(''.join([
+                    str(self),
+                    ' : Connection attempt#',
+                    str(attempt_num),
+                    ' failed']),
+                'warning')
+            attempt_num += 1
+            time.sleep(0.3)
 
     def clean_up(self):
         """

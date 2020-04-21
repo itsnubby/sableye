@@ -15,11 +15,11 @@ class Sensor(Device):
     """
     Your second one-stop-shop for sensor comms.
     """
-    def __init__(self, address, interface):
+    def __init__(self, label, address, interface):
         try:
-            super().__init__(address, interface)
-        finally:
-            super(Sensor, self).__init__(address, interface)
+            super().__init__(label, address, interface)
+        except:
+            super(Sensor, self).__init__(label, address, interface)
 
     def _fill_info(self):
         """
@@ -30,21 +30,30 @@ class Sensor(Device):
         """
         try:
             super()._fill_info()
-        finally:
+        except:
             super(Sensor, self)._fill_info()
         self.info.update({'class': 'sensor'})
         
+    def _get_device_id(self, label):
+        """
+        See that sensor.
+        :in: label (int) Unique id
+        :out: id (str)
+        """
+        # 'sensor' if not redefined.
+        return '-'.join(['sensor',str(label)])
 
     def _stream(self):
         """
-        <placeholder>
+        Change status here.
         """
-        raise NotImplementedError
+        self.status = 'streaming'
 
     def _stream_single(self):
         """
         <placeholder>
         """
+        self._start_thread(
         raise NotImplementedError
 
     def _stream_continuous(self):
@@ -70,7 +79,7 @@ class Sensor(Device):
         success = True
         try:
             mode = options['mode']
-        finally:
+        except:
             mode = 'single'     # <-- Change default stream mode here.
         if mode=='single':
             self._start_thread(self._stream_single, 'streaming')
