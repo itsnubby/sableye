@@ -7,11 +7,32 @@ Public:
 modified : 4/20/2020
   ) 0 o .
 """
-import cv2, glob
+import cv2, glob, time, os, datetime
 try:
     from .sensor import Sensor, say
 except:
     from sensor import Sensor, say
+
+
+## Global declarations or something.
+_EPOCH = datetime.datetime(1970,1,1)
+
+## Local functions
+def _get_time_now(time_format='utc'):
+    """
+    Thanks Jon.  (;
+    :in: time_format (str) ['utc','epoch']
+    :out: timestamp (str)
+    """
+    if time_format == 'utc' or time_format == 'label':
+        return datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    elif time_format == 'epoch' or time_format == 'timestamp':
+        td = datetime.datetime.utcnow() - _EPOCH
+        return str(td.total_seconds())
+    else:
+        # NOTE: Failure to specify an appropriate time_format will cost
+        #         you one layer of recursion! YOU HAVE BEEN WARNED.  ) 0 o .
+        return _get_time_now(time_format='epoch')
 
 def find_usb_cameras():
     """
@@ -19,20 +40,26 @@ def find_usb_cameras():
     :out: usb_cameras [USB_Camera]
     """
     usb_cameras = []
+    camera_addresses = []
     location = '/dev/video*'
     video_ports = glob.glob(location)
-    unique_id = 0
-    for address in video_ports:
-        usb_camera = USB_Camera(unique_id, address)
-#        try:
-        usb_camera.set_up()
-        usb_cameras.append(usb_camera)
-        unique_id += 1
-        say('Added USB camera from port '+str(address), 'success')
-#        except:
-#            say('Could not connect to USB camera at '+str(address), 'warning')
+    for cv_index in range(0,8,1):
+        channel = cv2.VideoCapture(cv_index)
+        if not channel is None and channel.isOpened():
+            camera_addresses.append(cv_index)
+        channel.release()
+        cv2.destroyAllWindows()
+
+    for unique_id, address in enumerate(camera_addresses):
+        say('Adding camera index '+str(address))
+        usb_cameras.append(USB_Camera(str(unique_id), address))
     return usb_cameras
 
+# GLOBALITIES.
+_CONNECTION_TIMER = 0
+_CONNECTION_TIMEOUT = 20                # 20s to connect.
+_STREAM_TIMER = 1
+_STREAM_DURATION_DEFAULT = 10        # 10s of streaming by default.
 
 class USB_Camera(Sensor):
     """
@@ -43,6 +70,10 @@ class USB_Camera(Sensor):
             super().__init__(label, address, interface)
         except:
             super(USB_Camera, self).__init__(label, address, interface)
+        global _STREAM_DURATION_DEFAULT
+        self._stream_duration = _STREAM_DURATION_DEFAULT
+        self._stream_mode = 'continuous'
+        self.stream = False
         
     def _fill_info(self):
         """
@@ -66,56 +97,240 @@ class USB_Camera(Sensor):
         # 'sensor' if not redefined.
         return '-'.join(['usb','camera',str(label)])
 
+    def set_file_paths(self, path_base='./test_data/'):
+        """
+        Set the base path to use to direct output data flow.
+        :in: path_base (str) working directory [default './test_data/']
+        :out: new_path_base (str) 
+        """
+        _video_extension = 'mp4'        # avi, mp4
+        _picture_extension = 'jpg'      # png, jpg
+        # Check that base directory exists.
+        if not os.path.isdir(path_base):
+            say('Creating '+path_base)
+            os.mkdir(path_base)
+        # Generate unique id a la timestamp.
+        timestamp_label = _get_time_now('label')
+        new_path_base = '_'.join([
+                path_base+timestamp_label,
+                self.id])
+        self._video_path = '.'.join([
+            new_path_base,
+            _video_extension])
+        self._picture_path = '.'.join([
+            new_path_base,
+            _picture_extension])
+
+    def _set_streaming_duration(self, duration):
+        """
+        Set the duration of recording session before starting here.
+        :in: duration (float) Streaming time [s]
+        """
+        self._stream_duration = duration
+
+    def _open_connection(self):
+        """
+        Thread to build a bridge with USB camera.
+        """
+        attempt = 1
+        while self.state == 'connecting':
+            self.channel = cv2.VideoCapture(int(self.address))
+            say('Capturing from '+str(self.address))
+            if self.channel and self.channel.isOpened():
+                event = (0, 'connected')
+                self._post_event(event)
+                break
+            self.channel.release()
+            say(str(self)+' : connection attempt '+str(attempt)+' failure', 'warning')
+            attempt += 1
+    
+    def _run_stream(self):
+        """
+        Stream data from device indefinitely.
+        """
+        _resolution = {
+                '720p': {
+                    'width': 1280,
+                    'height': 720
+                    }
+                }
+        # TODO: make some of these globals.
+        self.set_file_paths()   # Creates unique file ids.
+        fourcc = cv2.VideoWriter_fourcc(*'MPEG')
+        f_frames = 15.0     # <-- Change frames / s here.
+        this_resolution = (
+                _resolution['720p']['width'],
+                _resolution['720p']['height'])  # <-- Change resolution here.
+        w = self.channel.get(3)     #1280
+        h = self.channel.get(4)     #720 
+        out = cv2.VideoWriter(self._video_path, fourcc, f_frames, (int(w), int(h)))
+        # Stream away.
+        self.stream = True
+        while self.stream:
+            timestamp = _get_time_now('timestamp')
+            ret, frame = self.channel.read()
+            assert ret
+            out.write(frame)
+            #cv2.imshow('thing', frame)
+
+        out.release()
+        event = (0, 'stream_stopped')
+        self._post_event(event)
+
+
+    # Device-level state machine.
+    def _sleep(self, (this_priority, this_event)):
+        """
+        Sleepin'.
+        """
+        if this_event == 'connect_received':
+            self.migrate_state('connecting')
+        else:
+            time.sleep(0.1)
+
+    def _connect(self, (this_priority, this_event)):
+        """
+        Connect to a camera over OpenCV.
+        * Set a timeout using self._set_timeout()!
+        """
+        global _CONNECTION_TIMER, _CONNECTION_TIMEOUT
+        if this_event == 'init':
+            say('Connecting to '+str(self))
+            self._start_thread(self._open_connection, 'connecting')
+            self._set_timer(_CONNECTION_TIMER, _CONNECTION_TIMEOUT)
+        elif this_event == 'connected':
+            say(str(self)+' : connection established', 'success')
+            self.migrate_state('standing_by')
+        elif this_event == 'timeout_'+str(_CONNECTION_TIMER):
+            say(str(self)+' : timeout connecting to '+str(self)+'; disconnecting', 'warning')
+            self.migrate_state('disconnecting')
+        else:
+            time.sleep(0.1)
+
+    def _stream(self, (this_priority, this_event)):
+        """
+        Streaming for a preset time.
+        """
+        global _STREAM_TIMER
+        if this_event == 'init':
+            say(str(self)+' : streaming for '+str(self._stream_duration)+'s')
+            self._start_thread(self._run_stream, 'streaming')
+            if not self._stream_mode == 'continuous':
+                self._set_timer(_STREAM_TIMER, self._stream_duration)
+        elif this_event == 'timeout_'+str(_STREAM_TIMER) or this_event == 'stop_received':
+            say(str(self)+' : closing stream')
+            self.stream = False
+        elif this_event == 'stream_stopped':
+            say(str(self)+' : stream closed', 'success')
+            self.migrate_state('standing_by')
+        elif this_event == 'disconnect_received' or this_event == 'disconnected':
+            say(str(self)+' : stream interrupted; attempting to disconnect', 'warning')
+            self.stream = False
+            self.migrate_state('disconnecting')
+        else:
+            time.sleep(0.1)
+
+    def _stand_by(self, (this_priority, this_event)):
+        """
+        Idling about.
+        """
+        if this_event == 'init':
+            say(str(self)+' : standing by for input')
+        elif this_event == 'stream_received':
+            self.migrate_state('streaming')
+        elif this_event == 'disconnect_received':
+            self.migrate_state('disconnecting')
+        else:
+            time.sleep(0.1)
+
+    def _disconnect(self, (this_priority, this_event)):
+        """
+        Disconnecting.
+        """
+        if this_event == 'init' or this_event == 'timeout_1':
+            say(str(self)+' disconnecting')
+            self.channel.release()
+            cv2.destroyAllWindows() # <-- make sure that you can get rid of this.
+            if not self.channel.isOpened():
+                self.migrate_state('sleeping')
+        else:
+            time.sleep(0.1)
+
+    def _run(self):
+        """
+        Check for events, update state broh.
+        """
+        while True:
+            this_event = self._get_event()
+            if self.state == 'sleeping':
+                self._sleep(this_event)
+            elif self.state == 'connecting':
+                self._connect(this_event)
+            elif self.state == 'standing_by':
+                self._stand_by(this_event)
+            elif self.state == 'streaming':
+                self._stream(this_event)
+            elif self.state == 'disconnecting':
+                self._disconnect(this_event)
+            else:
+                say('Out of state, outta mind, and in '+str(self.state), 'error')
+            self._update()
+
     def set_up(self,options={}):
         """
         Setup a USB camera.
         :out: success (Bool)
         :in: options {}
         """
-        try:
-            super().set_up(options=options)
-        except:
-            super(USB_Camera, self).set_up(options=options)
+        if not self.state == 'sleeping':
+            say('Attempting to set up an existing device.', 'warning')
+        say('Setting up')
+        event = (1, 'connect_received')
+        self._post_event(event)
+
+    def wait_for_ready(self):
+        """
+        Wait for this to be standing by.
+        """
+        while 1<2:
+            if self.state == 'standing_by':
+                break
+            else:
+                time.sleep(0.1)
+
+    def start_recording(self, duration=0.0):
+        """
+        Turn it on.
+        :in: duration (float) streaming time [s]; duration <= 0.0 == continuous streaming!!
+        """
+        if duration <= 0.0:
+            self._stream_mode = 'continuous'
+        else:
+            self._stream_mode = 'timed'
+            self._stream_duration = duration
+
+        event = (1, 'stream_received')
+        self._post_event(event)
+
+    def stop_recording(self):
+        """
+        Turn it off.
+        """
+        event = (1, 'stop_received')
+        self._post_event(event)
 
     def clean_up(self):
         """
         Close down shop.
         :out: success (Bool)
         """
-        try:
-            super().clean_up()
-        except:
-            super(USB_Camera, self).clean_up()
-        return True
+        if not self.state == 'sleeping':
+            say('Shutting down '+str(self))
+            event = (1, 'disconnect_received')
+            self._post_event(event)
+        else:
+            say('Already shut down', 'success')
         
-    def _connect(self):
-        """
-        Connect to a camera over OpenCV.
-        """
-        try:
-            super()._connect()
-        except:
-            super(USB_Camera, self)._connect()
-        try:
-            self.channel = cv2.VideoCapture(self.address)
-            self.status = 'standing_by'
-        except:
-            say(self.id+' cannot be opened', 'warning')
-            self._disconnect()
-        return True
-
-    def _disconnect(self):
-        """
-        Close connection with a camera.
-        """
-        try:
-            super()._disconnect()
-        except:
-            super(USB_Camera, self)._disconnect()
-        try:
-            self.channel.release()
-        except:
-            say(self.id+' not open.', 'warning')
 
     def _test_connection(self):
         """
@@ -123,42 +338,37 @@ class USB_Camera(Sensor):
         :in: port_index (int) cv2-friendly port to check
         :out: available (Bool) is device ready for communication?
         """
-        if self.channel and self.channel.isOpened():
-            return True
+        try:
+            if self.channel and self.channel.isOpened():
+                return True
+        except:
+            pass
         return False
 
-    def _stream_single(self):
-        """
-        <placeholder>
-        """
-        try:
-            super()._stream()
-        except:
-            super(USB_Camera, self)._stream()
-
-    def _stream_continuous(self):
-        """
-        <placeholder>
-        """
-        try:
-            super()._stream()
-        except:
-            super(USB_Camera, self)._stream()
-
-    def _stream_timelapse(self, frequency=1):
-        """
-        <placeholder>
-        """
-        try:
-            super()._stream()
-        except:
-            super(USB_Camera, self)._stream()
 
 def __test__usb_camera():
     usb_cameras = find_usb_cameras()
+    for usb_camera in usb_cameras:
+        usb_camera.set_up()
+    for usb_camera in usb_cameras:
+        usb_camera.wait_for_ready()
+    for usb_camera in usb_cameras:
+        usb_camera.start_recording()
+    time.sleep(10)
+    for usb_camera in usb_cameras:
+        usb_camera.stop_recording()
+    time.sleep(2)
+#    for thing in usb_cameras:
+#        say('Setting up')
+#        thing.set_up()
+#        say('Setup successful', 'success')
+#    for thing in usb_cameras:
+#        say('Taking a picture')
+#        thing.take_picture()
+#        say('Picture taken', 'success')
     for thing in usb_cameras:
-       thing.set_up() 
-    return 0
+        thing.clean_up()
+    say('Later nerd', 'success')
 
 if __name__ == '__main__':
     __test__usb_camera()

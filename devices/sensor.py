@@ -11,6 +11,7 @@ try:
 except:
     from device import Device, say
 
+
 class Sensor(Device):
     """
     Your second one-stop-shop for sensor comms.
@@ -20,6 +21,7 @@ class Sensor(Device):
             super().__init__(label, address, interface)
         except:
             super(Sensor, self).__init__(label, address, interface)
+        self.pls_stream = False     # Streaming flag.
 
     def _fill_info(self):
         """
@@ -47,13 +49,12 @@ class Sensor(Device):
         """
         Change status here.
         """
-        self.status = 'streaming'
+        raise NotImplementedError
 
     def _stream_single(self):
         """
         <placeholder>
         """
-        self._start_thread(
         raise NotImplementedError
 
     def _stream_continuous(self):

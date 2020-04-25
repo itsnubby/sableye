@@ -9,26 +9,32 @@ modified : 4/17/2020
 import os, time, datetime, json, threading, multiprocessing
 import subprocess as sp
 try:
+    import queue
     from .squawk import say
 except:
+    import Queue as queue
     from squawk import say
 
 
 ## Global declarations or something.
+_LOWEST_PRIORITY = 2
 _EPOCH = datetime.datetime(1970,1,1)
 _DEVICE_STATES = [
         'sleeping',
+        'connecting',
         'standing_by']
+
 _SUPPORT_TABLE = {
         'interface': [
-            'opencv',
-            'picamera',
             'serial',
             'i2c'],
         'device_type': [
             'usb_camera',
             'pi_camera']}
-
+_TIMER_RESET = (False, 0.0)
+_TIMERS_MAX = 8                             # Number of available timers / device.
+_TIMERS_INIT = [_TIMER_RESET]*_TIMERS_MAX     # Reset state for all timers.
+_EVENT_QUEUE_MAX_SIZE = 8                   # Max number of entries in the event queue.
 
 ## Local functions.
 def _get_time_now(time_format='utc'):
@@ -38,10 +44,10 @@ def _get_time_now(time_format='utc'):
     :out: timestamp (str)
     """
     if time_format == 'utc' or time_format == 'label':
-        return datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        return datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     elif time_format == 'epoch' or time_format == 'timestamp':
         td = datetime.datetime.utcnow() - _EPOCH
-        return str(td.total_seconds()).replace('.','_')
+        return str(td.total_seconds())
     else:
         # NOTE: Failure to specify an appropriate time_format will cost
         #         you one layer of recursion! YOU HAVE BEEN WARNED.  ) 0 o .
@@ -74,21 +80,49 @@ class Device(object):
         To inherit:
             * redefine _fill_info and _get_device_id appropriately.
             * call this __init__ from the child Device.
-        :in: device_address
-        :in: serial_number
-        :in: device_type
         :in: label (int) Unique ID
+        :in: address
+        :in: interface
         """
-        assert(_check_supported({'interface': interface}))
-        self.address = address
+        global _TIMERS_INIT, _EVENT_QUEUE_MAX_SIZE
+        self._supported_events = [
+                'no_event',
+                'connected',
+                'disconnected',
+                'connect_received',
+                'disconnect_received',
+                'timeout_0',
+                'timeout_1',
+                'timeout_2',
+                'timeout_3',
+                'timeout_4',
+                'timeout_5',
+                'timeout_6',
+                'timeout_7']
+        self._supported_states = [
+                'sleeping',
+                'connecting',
+                'standing_by']
+        self.address = str(address)
         self.interface = interface
         self.id = self._get_device_id(label)
-        self.status = 'sleeping'
-        self.base_path = './'
+        self.base_path = './test_data/'
+        self.file_extension = 'txt'
+        # Set file path to buffer path.
+        self.file_path = '.'.join([
+            '_'.join([
+                self.base_path+'buffer',
+                self.id]),
+            self.file_extension])
 
         self.info = {}
+        self.event_queue = queue.PriorityQueue(maxsize=_EVENT_QUEUE_MAX_SIZE)
         self.active_threads = []
         self.active_processes = []
+        self.active_timers = _TIMERS_INIT
+
+        self.migrate_state('sleeping')
+        self._start_thread(self._run, 'daemon')
 
     def __str__(self):
         try:
@@ -96,6 +130,7 @@ class Device(object):
         except:
             return 'device'
 
+    # Toolbelt.
     def _start_process(self, target, name, args=(), kwargs={}):
         """
         Get them wheels turning.
@@ -108,23 +143,26 @@ class Device(object):
         process.start()
         if process.is_alive():
             self.active_processes.append(process)
-            return True
-        return False
+            return process
+        return None
 
     def _start_thread(self, target, name, args=(), kwargs={}):
         """
         Get them wheels turning.
         :in: target (*funk)
+        :in: name (str) NOTE : set as daemon process with the word 'daemon' in here.
         :in: args (*)
         :in: kwargs {*}
-        :out: success (Bool)
+        :out: thread (Thread)
         """
         thread = threading.Thread(target=target, name=name, args=args, kwargs=kwargs)
+        if (name.find('daemon')) != -1:
+            thread.daemon = True
         thread.start()
         if thread.isAlive():
             self.active_threads.append(thread)
-            return True
-        return False
+            return thread
+        return None
 
     def _kill_process(self):
         """
@@ -178,6 +216,156 @@ class Device(object):
                     continue
         return True
 
+    def _remove_old_threads(self):
+        """
+        Clean self.active_threads.
+        """
+        for thread in self.active_threads:
+            if not thread.isAlive():
+                self.active_threads.remove(thread)
+
+    def _remove_old_processes(self):
+        """
+        Clean self.active_processes.
+        """
+        for process in self.active_processes:
+            if not process.is_alive():
+                self.active_processes.remove(process)
+
+    def _countdown(self, timer_num, duration):
+        """
+        Counting down the HH:MM:SS.
+        """
+        global _TIMER_RESET
+        time_left = duration
+        start_time = float(_get_time_now('epoch'))
+        self.active_timers[timer_num] = (True, time_left)
+        while time_left > 0:
+            current_time = float(_get_time_now('epoch'))
+            time_left = current_time - start_time
+        self.active_timers[timer_num] = _TIMER_RESET
+
+    def _get_timer_info(self, timer_num):
+        """
+        :in: timer_num (int)
+        :out: timer_active, time_left (Bool, float)
+        """
+        try:
+            return self.active_timers[timer_num]
+        except:
+            say('Invalid timer number: '+str(timer_num), 'error')
+            return (False, -1.0)
+
+    def _set_timer(self, timer_num, duration):
+        """
+        :in: timer_num (int) [0 -> _TIMER_MAX-1]
+        :in: duration (float) [seconds]
+        """
+        timer_active, time_left = self._get_timer_info(timer_num)
+        if timer_active or time_left < 0:
+            say('Cannot set timeout for timer '+str(timer_num), 'warning')
+        say('Timeout : '+str(duration)+'s')
+        self._start_thread(self._countdown, 'timeout', args=[timer_num, duration])
+
+    def _reset_timers(self):
+        """
+        Reset timers.
+        """
+        global _TIMERS_INIT
+        self._active_timers = _TIMERS_INIT
+
+    def migrate_state(self, n_state):
+        """
+        :in: n_state (str) next state
+        """
+        # TODO: Make this more beefy if needed.
+        self.state = n_state
+        self._post_event((0, 'init'))
+        self._reset_timers()
+
+    # Device-level state machine.
+    def _peek_event(self):
+        """
+        :out: priority, event (int, str)
+        """
+        priority, event = self.event_queue.get_nowait()
+        self.event_queue.put(priority, event)
+        return priority, event
+
+    def _post_event(self, (priority, event)):
+        """
+        :in: priority, event (int, str)
+        """
+        # TODO: implement as a priority queue.
+#        global _LOWEST_PRIORITY
+#        print('Priority '+str(priority)+' (lowest '+str(_LOWEST_PRIORITY)+'); Event '+str(event))
+#        priority_max, event_max = self._get_event() # TODO: make this suck less.
+#        while priority > priority_max:
+#            priority_max, event_max = self._get_event() # TODO: make this suck less.
+        self.event_queue.put((priority, event))
+
+    def _get_event(self):
+        """
+        Check for new events.
+        :out: event (str)
+        """
+        global _LOWEST_PRIORITY
+        if not self.event_queue.empty():
+            priority, event = self.event_queue.get_nowait()
+            return priority, event
+        else:
+            return _LOWEST_PRIORITY, 'no_event'
+
+    def _sleep(self, this_event):
+        """
+        Sleeping.
+        """
+        say('sleeping')
+        
+    def _connect(self, this_event):
+        """
+        Connecting.
+        """
+        say('connecting')
+
+    def _stand_by(self, this_event):
+        """
+        Standing by.
+        """
+        say('standing by')
+
+    def _update(self):
+        """
+        Check for inputs.
+        """
+        for index, timer in enumerate(self.active_timers):
+            if timer[0] and timer[1] < 0:
+                event = 'timeout_'+str(index)
+                priority = 0
+                self._post_event((priority, event))
+            self._remove_old_threads()
+            self._remove_old_processes()
+
+    def _run(self):
+        """
+        Check for events, update state broh.
+        """
+        try:
+            while True:
+                this_event = self._get_event()
+                if self.state == 'sleeping':
+                    self._sleep(this_event)
+                elif self.state == 'connecting':
+                    self._connect(this_event)
+                elif self.state == 'standing_by':
+                    self._stand_by(this_event)
+                else:
+                    say('Out of state and in '+str(self.state), 'error')
+                self._update()
+        except KeyboardInterrupt:
+            raise
+
+    # Datatype definitions.
     def _fill_info(self):
         """
         Chat up the device to find where it lives as well
@@ -199,11 +387,37 @@ class Device(object):
         # 'generic' if not redefined!
         return '-'.join(['generic',str(label)])
 
+    def _link_comms(self):
+        return 'Hi nub.'
+
     def _connect(self):
         """
-        Change status here.
+        Change state here.
         """
-        self.status = 'standing_by'
+        success = False
+        timeout = 10.0      # <-- Edit connection timeout / attempt here.
+        self.migrate_state('connecting')
+        attempt = 1
+        self.channel = self._link_comms()
+        _timer = self._start_thread(self._countdown, 'connecting', (timeout))
+        while 1<2:
+            # Only return success if connection confirmed.
+            if self._test_connection():
+                self.migrate_state('standing_by')
+                success = True
+                break
+            # Try again if the timer expires.
+            if not _timer.is_alive():
+                self._disconnect()
+                attempt += 1
+                if attempt > attempts:
+                    say('Failed to connect to '+str(self), 'error')
+                    self.migrate_state('sleeping')
+                    break
+                self._start_thread(self._link_comms, 'connecting')
+                _timer = self._start_thread(self._countdown, 'connecting', (timeout))
+            time.sleep(0.1)
+        return success
 #        channel = None
 #        try:
 #            if self.interface == 'serial':
@@ -216,9 +430,9 @@ class Device(object):
 
     def _disconnect(self):
         """
-        Change status here.
+        Change state here.
         """
-        self.status = 'sleeping'
+        raise NotImplementedError
 
     def _test_connection(self, options={}):
         """
@@ -226,21 +440,29 @@ class Device(object):
         """
         raise NotImplementedError
 
-    def set_file_path(self, path_base):
+    def set_file_path(self, path_base='./test_data/'):
         """
         Set the base of the output path for data flow.
-        :in: path_base (str)
+        :in: path_base (str) working directory [default]
         """
-        say('Setting base file path for '+self.id+' to '+path_base)
-        if os.path.isdir(path_base):
-          self.base_path = path_base
-        else:
-          say(''.join([
-            'Cannot set path base to ',
-            path_base,
-            '; directory does not exist; using working directory']),
-            'warning')
-          self.base_path = './'
+        if not os.path.isdir(path_base):
+            say('Creating '+path_base)
+#            try:
+            os.mkdir(path_base)
+#            except:
+#                say(''.join([
+#                        'Could not create directory at ',
+#                        path_base,
+#                        '; using default directory']),
+#                    'warning')
+#                path_base = './test_data/'
+        self.base_path = path_base
+        timestamp_label = _get_time_now('label')
+        self.file_path = '.'.join([
+            '_'.join([
+                self.base_path+timestamp_label,
+                self.id]),
+            self.file_extension])
 
     def generate_metadata(self):
         """
@@ -267,37 +489,30 @@ class Device(object):
         """
         Setup a device.
         :in: options (dict) - Defined by specific device.
+            * file_extension (str) txt [default]
         :out: success (Bool)
         """
         # TODO: Add options currently supported.
+        timeout = 10.0
         self.connected = False
         self._fill_info()
-        self._connect()
-        try:
-            attempts_max = options['attempts']
-        except:
-            attempts_max = 5
-        attempt_num = 1
-        while attempt_num < attempts_max:
-            if self._test_connection():
-                self.connected = True
+        attempts = 1
+        self.migrate_state('connecting')
+        self._start_thread(self._connect, 'connecting')
+        while 1<2:
+            if self.state == 'connecting':
                 break
-            say(''.join([
-                    str(self),
-                    ' : Connection attempt#',
-                    str(attempt_num),
-                    ' failed']),
-                'warning')
-            attempt_num += 1
             time.sleep(0.3)
+        return True
 
     def clean_up(self):
         """
         Close down shop.
         """
+        self._post_event((1, 'disconnect_received'))
         self._kill_threads()
         self._kill_processes()
         self._disconnect()
-        self.status = 'sleeping'
+        self.migrate_state('sleeping')
         return True
 
