@@ -59,7 +59,7 @@ def find_usb_cameras():
 _CONNECTION_TIMER = 0
 _CONNECTION_TIMEOUT = 20                # 20s to connect.
 _STREAM_TIMER = 1
-_STREAM_DURATION_DEFAULT = 10        # 10s of streaming by default.
+_STREAM_DURATION_DEFAULT = 10           # 10s of streaming by default.
 
 class USB_Camera(Sensor):
     """
@@ -103,7 +103,7 @@ class USB_Camera(Sensor):
         :in: path_base (str) working directory [default './test_data/']
         :out: new_path_base (str) 
         """
-        _video_extension = 'mp4'        # avi, mp4
+        _video_extension = 'avi'        # avi, mp4
         _picture_extension = 'jpg'      # png, jpg
         # Check that base directory exists.
         if not os.path.isdir(path_base):
@@ -144,9 +144,38 @@ class USB_Camera(Sensor):
             say(str(self)+' : connection attempt '+str(attempt)+' failure', 'warning')
             attempt += 1
     
-    def _run_stream(self):
+    def _test_connection(self):
         """
-        Stream data from device indefinitely.
+        Check a port index through CV2.
+        :in: port_index (int) cv2-friendly port to check
+        :out: available (Bool) is device ready for communication?
+        """
+        try:
+            if self.channel and self.channel.isOpened():
+                return True
+        except:
+            pass
+        return False
+
+    def _capture_image(self,  preview=False):
+        """
+        Take a single picture.
+        """
+        ret, frame = self.channel.read()
+        assert ret
+        if not preview:
+            say(str(self)+' : writing image to '+str(self._picture_path))
+            cv2.imwrite(self._picture_path, frame)
+        else:
+            cv2.imshow('-'.join([
+                'preview',
+                str(self)]), frame)
+            cv2.destroyAllWindows()     # TODO: <-- Make this reachable by interrupt.
+    
+    def _capture_video(self, preview=False):
+        """
+        Capture video from camera.
+        :in: preview (Bool)
         """
         _resolution = {
                 '720p': {
@@ -154,15 +183,14 @@ class USB_Camera(Sensor):
                     'height': 720
                     }
                 }
-        # TODO: make some of these globals.
-        self.set_file_paths()   # Creates unique file ids.
-        fourcc = cv2.VideoWriter_fourcc(*'MPEG')
-        f_frames = 15.0     # <-- Change frames / s here.
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        f_frames = 10.0     # <-- Change frames / s here.
         this_resolution = (
                 _resolution['720p']['width'],
                 _resolution['720p']['height'])  # <-- Change resolution here.
         w = self.channel.get(3)     #1280
         h = self.channel.get(4)     #720 
+        # TODO: test if this can be written to after being released.
         out = cv2.VideoWriter(self._video_path, fourcc, f_frames, (int(w), int(h)))
         # Stream away.
         self.stream = True
@@ -170,10 +198,30 @@ class USB_Camera(Sensor):
             timestamp = _get_time_now('timestamp')
             ret, frame = self.channel.read()
             assert ret
-            out.write(frame)
-            #cv2.imshow('thing', frame)
-
+            if not preview:
+                out.write(frame)
+            else:
+                cv2.imshow('-'.join([
+                    'preview',
+                    str(self)]), frame)
         out.release()
+
+    def _run_stream(self):
+        """
+        Stream data from device indefinitely.
+        """
+        # TODO: add some checks to see if USBs can handle the load of cameras
+        global _STREAM_TIMER
+        # TODO: make some of these globals.
+        self.set_file_paths()   # Creates unique file ids.
+        if self._stream_mode == 'single':
+            say(str(self)+' : trying it out nub')
+            self._capture_image()
+        else:
+            if self._stream_mode == 'timed':      # Start timeout.
+                self._set_timer(_STREAM_TIMER, self._stream_duration)
+            self._capture_video()
+        
         event = (0, 'stream_stopped')
         self._post_event(event)
 
@@ -213,10 +261,8 @@ class USB_Camera(Sensor):
         """
         global _STREAM_TIMER
         if this_event == 'init':
-            say(str(self)+' : streaming for '+str(self._stream_duration)+'s')
+            say(str(self)+' : stream opening')
             self._start_thread(self._run_stream, 'streaming')
-            if not self._stream_mode == 'continuous':
-                self._set_timer(_STREAM_TIMER, self._stream_duration)
         elif this_event == 'timeout_'+str(_STREAM_TIMER) or this_event == 'stop_received':
             say(str(self)+' : closing stream')
             self.stream = False
@@ -237,6 +283,7 @@ class USB_Camera(Sensor):
         if this_event == 'init':
             say(str(self)+' : standing by for input')
         elif this_event == 'stream_received':
+            print(str('hi nub.'))
             self.migrate_state('streaming')
         elif this_event == 'disconnect_received':
             self.migrate_state('disconnecting')
@@ -288,12 +335,13 @@ class USB_Camera(Sensor):
         event = (1, 'connect_received')
         self._post_event(event)
 
-    def wait_for_ready(self):
+    def wait_for_(self, state):
         """
-        Wait for this to be standing by.
+        Wait for this to be in some state.
+        :in: state (str)
         """
         while 1<2:
-            if self.state == 'standing_by':
+            if self.state == state:
                 break
             else:
                 time.sleep(0.1)
@@ -303,6 +351,7 @@ class USB_Camera(Sensor):
         Turn it on.
         :in: duration (float) streaming time [s]; duration <= 0.0 == continuous streaming!!
         """
+        # TODO: Add state check.
         if duration <= 0.0:
             self._stream_mode = 'continuous'
         else:
@@ -316,8 +365,21 @@ class USB_Camera(Sensor):
         """
         Turn it off.
         """
+        # TODO: Add state check.
         event = (1, 'stop_received')
         self._post_event(event)
+
+    def take_picture(self):
+        """
+        Camera-specific.
+        """
+        # TODO: Add state check.
+        say(str(self)+' : taking a pic')
+        self._stream_mode = 'single'
+        event = (1, 'stream_received')
+        self._post_event(event)
+        self.wait_for_('streaming')       # Wait for pictures to be taken.
+        self.wait_for_('standing_by')
 
     def clean_up(self):
         """
@@ -332,40 +394,24 @@ class USB_Camera(Sensor):
             say('Already shut down', 'success')
         
 
-    def _test_connection(self):
-        """
-        Check a port index through CV2.
-        :in: port_index (int) cv2-friendly port to check
-        :out: available (Bool) is device ready for communication?
-        """
-        try:
-            if self.channel and self.channel.isOpened():
-                return True
-        except:
-            pass
-        return False
-
 
 def __test__usb_camera():
     usb_cameras = find_usb_cameras()
     for usb_camera in usb_cameras:
         usb_camera.set_up()
     for usb_camera in usb_cameras:
-        usb_camera.wait_for_ready()
+        usb_camera.wait_for_('standing_by')
+#    for usb_camera in usb_cameras:
+#        usb_camera.start_recording()
+#    time.sleep(10)
+#    for usb_camera in usb_cameras:
+#        usb_camera.stop_recording()
     for usb_camera in usb_cameras:
-        usb_camera.start_recording()
-    time.sleep(10)
-    for usb_camera in usb_cameras:
-        usb_camera.stop_recording()
-    time.sleep(2)
+        usb_camera.take_picture()
 #    for thing in usb_cameras:
 #        say('Setting up')
 #        thing.set_up()
 #        say('Setup successful', 'success')
-#    for thing in usb_cameras:
-#        say('Taking a picture')
-#        thing.take_picture()
-#        say('Picture taken', 'success')
     for thing in usb_cameras:
         thing.clean_up()
     say('Later nerd', 'success')
