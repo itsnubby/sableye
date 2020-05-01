@@ -28,9 +28,9 @@ def _get_time_now(time_format='utc'):
 def _query_user(query):
     # Foolishly maintain Python2 compatibility.
     try:
-        return str(raw_input()).strip()
-    finally:
-        return str(input()).strip()
+        return str(raw_input(query)).strip()
+    except:
+        return str(input(query)).strip()
 
 def _ask_bool(prompt):
     """
@@ -103,8 +103,29 @@ def ask(prompt, options=[], default='', answer_type=str):
         return _ask_bool(prompt)
     if options:
         prompt += _format_options(options, default)
-    gen_response = type(answer_type)(_query_user(prompt))
-    if not response:
-        return default
+    _agnostic_response = _query_user(prompt)
+    try:
+        response = answer_type(_agnostic_response)
+    except (TypeError, ValueError) as e:
+        say(' '.join([
+            'SKRAWW!! <: Types are incompatible :',
+            str(type(_agnostic_response)),
+            'and',
+            str(answer_type),
+            '; returning default,',
+            str(default)]), 'warning')
+        response = answer_type(default)
     return response
 
+# Unit tests.
+def _test_ask():
+    prompt = 'Hi nub? : '
+    options=[]
+    default=''
+    answer_type=str
+    
+    answer = ask(prompt, options=options, default=default, answer_type=answer_type)
+    print(str(answer))
+
+if __name__ == '__main__':
+    _test_ask()

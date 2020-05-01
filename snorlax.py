@@ -7,12 +7,12 @@ modified : 5/1/2020
 import sys, time, datetime, threading
 try:
     import queue as Queue
-    from .sableye import detect, set_up_, record_from_, take_picture_from_
+    from .sableye import detect, set_up_, record_from_, take_picture_from_, clean_up_
     from .alakazam import sort
     from .squawk import ask, say
 except:
     import Queue
-    from sableye import detect, set_up_, record_from_, take_picture_from_
+    from sableye import detect, set_up_, record_from_, take_picture_from_, clean_up_
     from alakazam import sort
     from squawk import ask, say
 
@@ -45,9 +45,10 @@ _DEFAULT_PRIORITY = _HIGHEST_PRIORITY + 1
 [SLEEPING,
 SETTING_UP,
 CALIBRATING,
-LUMBERING_ABOUT] = range(0,4)
-CURRENT_STATE = SLEEPING    # Stay present
-NEXT_STATE = SLEEPING       #  with eyes on the road.    ) 0 o .
+LUMBERING_ABOUT,
+CLEANING_UP] = range(0,5)
+CURRENT_STATE = CLEANING_UP     # Stay present
+NEXT_STATE = SLEEPING           #  with eyes on the road.    ) 0 o .
 
 # devices.
 DEVICES = []
