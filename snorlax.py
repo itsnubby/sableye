@@ -8,12 +8,12 @@ import sys, time, datetime, threading
 try:
     import queue as Queue
     from .sableye import detect, set_up_, record_from_, take_picture_from_, clean_up_
-    from .alakazam import sort
+    from .alakazam import Node, sort
     from .squawk import ask, say
 except:
     import Queue
     from sableye import detect, set_up_, record_from_, take_picture_from_, clean_up_
-    from alakazam import sort
+    from alakazam import Node, sort
     from squawk import ask, say
 
 
@@ -76,6 +76,7 @@ _CALIBRATION_TIMEOUT = _DEFAULT_TIMEOUT
 _ACTIVE_THREADS = []
 _ACTIVE_PROCESSES = []
 _EPOCH = datetime.datetime(1970,1,1)
+
 
 ## helpers.
 def _get_time_now(time_format='utc'):
@@ -165,18 +166,69 @@ def _set_timer(timer_number, duration):
     say('Timeout : '+str(duration)+'s')
     _start_thread(_start_timer, 'timeout-daemon', args=[timer_number, duration])
 
+## scheduler/interrupts TODO : move outta here?
 
 ## event stuff.
+class Event(Node):
+    """
+    :in: label (str)
+    """
+    def __init__(self, label, event_time=''):
+        self.time_created = _get_time_now('utc')
+        self.time_raised = None
+        self.label = str(label)
+        if event_time:
+            key = self._hhmmss_to_int(event_time)
+        else:
+            key = 0
+        try:
+            super().__init__(key)
+        except:
+            super(Event, self).__init__(key)
+
+    def __str__(self):
+        return str(self.label)
+
+    def _hhmmss_to_int(self, hhmmss):
+        try:
+            hms = hhmmss.split(':')
+        except TypeError:
+            say('Cannot convert; must be in HH:MM(:SS optional) format', 'warning')
+            return 0.0
+        if len(hms) == 3:
+            hour_str, min_str, sec_str = hms
+        elif len(hms) == 2:
+            hour_str, min_str = hms
+            sec_str = '00'
+        else:
+            say('Cannot convert; must be in HH:MM(:SS optional) format', 'warning')
+            raise TypeError
+        # TODO : [5/1/2020 nubby] convert this shiz now.
+        return 0.0
+
 def _get_event():
     global EVENT_QUEUE, _LOWEST_PRIORITY
     if EVENT_QUEUE.empty():
-        return _LOWEST_PRIORITY, 'NO_EVENT'
-    return EVENT_QUEUE.get_nowait()
+        return 'NO_EVENT'
+    return str(EVENT_QUEUE.get_nowait()[1])
 
 def _post_event(priority, event_name):
+    """
+    Post events to the event queue.
+    """
     global EVENT_QUEUE
-    event = priority, event_name
-    EVENT_QUEUE.put_nowait(event)
+    event = Event(event_name)
+    priority_event = priority, event
+    EVENT_QUEUE.put_nowait(priority_event)
+
+def _add_to_schedule(event_name, event_time):
+    """
+    Post events to calendar.
+    """
+    global EVENT_SCHEDULE
+    event = Event(event_name, event_time=event_time)
+    EVENT_SCHEDULE.append(event)    # TODO : add priority?
+    sort(EVENT_SCHEDULE)
 
 def _clear_events():
     global EVENT_QUEUE
@@ -280,60 +332,60 @@ def _update():
     _check_timers()
     _update_state()
 
-def _rest(new_event):
+def _rest(new_event_name):
     """
     This needs USER attention to wake up.
     """
-    if new_event[1] == 'INIT_EVENT':
+    if new_event_name == 'INIT_EVENT':
         say('SNORLAX : Zzz...')
         _start_thread(_hibernation, 'hibernating-daemon')
-    elif new_event[1] == 'POKEFLUTE_EVENT':
+    elif new_event_name == 'POKEFLUTE_EVENT':
         _migrate_state(SETTING_UP)
     else:
         time.sleep(0.3)
     return
 
-def _set_up(new_event):
+def _set_up(new_event_name):
     global DEVICES
-    if new_event[1] == 'INIT_EVENT':
+    if new_event_name == 'INIT_EVENT':
         _start_thread(_start_set_up, 'setting_up-daemon')
         _set_timer(_TIMER_1, _SET_UP_TIMEOUT)
-    elif new_event[1] == 'COMPLETE_EVENT':
+    elif new_event_name == 'COMPLETE_EVENT':
         _migrate_state(CALIBRATING)
-    elif new_event[1] == 'TIMEOUT_1_EVENT':
+    elif new_event_name == 'TIMEOUT_1_EVENT':
         _migrate_state(CLEANING_UP)
     else:
         time.sleep(0.1)
     return
 
-def _calibrate(new_event):
-    if new_event[1] == 'INIT_EVENT':
+def _calibrate(new_event_name):
+    if new_event_name == 'INIT_EVENT':
         _start_thread(_start_calibration, 'calibrating-daemon')
         _set_timer(_TIMER_1, _CALIBRATION_TIMEOUT)
-    elif new_event[1] == 'COMPLETE_EVENT':
+    elif new_event_name == 'COMPLETE_EVENT':
         _migrate_state(LUMBERING_ABOUT)
     else:
         time.sleep(0.1)
     return
 
-def _lumber_about(new_event):
-    if new_event[1] == 'INIT_EVENT':
+def _lumber_about(new_event_name):
+    if new_event_name == 'INIT_EVENT':
         _start_thread(_get_lumbering, 'lumbering-daemon')
-    elif new_event[1] == 'SCHEDULED_EVENT':
+    elif new_event_name == 'SCHEDULED_EVENT':
         _start_thread(_handle_calendar, 'calendar-daemon')
-    elif new_event[1] == 'INTERRUPT_EVENT':
+    elif new_event_name == 'INTERRUPT_EVENT':
         _start_thread(_handle_interrupt, 'interruption-daemon')     # TODO : make priorities of interrupts.
-    elif new_event[1] == 'EXIT_EVENT':
+    elif new_event_name == 'EXIT_EVENT':
         _migrate_state(CLEANING_UP)
     else:
         time.sleep(0.3)
     return
 
-def _clean_up(new_event):
-    if new_event[1] == 'INIT_EVENT':
+def _clean_up(new_event_name):
+    if new_event_name == 'INIT_EVENT':
         _start_thread(_start_clean_up, 'cleaning_up-daemon')
         _set_timer(_TIMER_1, _SET_UP_TIMEOUT)
-    elif new_event[1] == 'COMPLETE_EVENT':
+    elif new_event_name == 'COMPLETE_EVENT':
         _migrate_state(SLEEPING)
     else:
         time.sleep(0.1)
@@ -346,17 +398,17 @@ def run(user_input):
     _migrate_state(SETTING_UP)    # Initial state is asleep.
     global CURRENT_STATE
     while 1<2:
-        new_event = _get_event()
+        new_event_name = _get_event()
         if CURRENT_STATE == SLEEPING:
-            _rest(new_event)
+            _rest(new_event_name)
         elif CURRENT_STATE == SETTING_UP:
-            _set_up(new_event)
+            _set_up(new_event_name)
         elif CURRENT_STATE == CALIBRATING:
-            _calibrate(new_event)
+            _calibrate(new_event_name)
         elif CURRENT_STATE == LUMBERING_ABOUT:
-            _lumber_about(new_event)
+            _lumber_about(new_event_name)
         elif CURRENT_STATE == CLEANING_UP:
-            _clean_up(new_event)
+            _clean_up(new_event_name)
         else:
             _migrate_state(CLEANING_UP)
         _update()
