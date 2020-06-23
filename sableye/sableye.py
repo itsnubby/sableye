@@ -26,82 +26,87 @@ def find_usb_sensors():
 
 def printf(blurb, flag='status'):
     preamble = str(flag).upper() + ' : '
-    blurb = preamable + blurb
+    blurb = preamble + blurb
     print(blurb)
 
-##finders.
-def find_sensors():
-    # Find available eyes/ears/tongues/etc.
-    sensors = []
-    sensors += find_i2c_devices()
-    sensors += find_usb_sensors()
-    sensors += find_cv2_cameras()
-    return sensors
+class Sableye():
+    def __init__(self):
+        printf('Sableye created')
 
-# Find available heads.
-def find_controllers():
-    pass
+    ##finders.
+    def find_sensors(self):
+        # Find available eyes/ears/tongues/etc.
+        sensors = []
+        sensors += find_i2c_devices()
+        sensors += find_usb_sensors()
+        sensors += find_cv2_cameras()
+        return sensors
 
-# Find available limbs.
-def find_mech():
-    pass
+    # Find available heads.
+    def find_controllers(self):
+        pass
+
+    # Find available limbs.
+    def find_mech(self):
+        pass
 
 
-def find_devices():
-    sensors = find_sensors()
-    controllers = find_controllers()
-    mech = find_mech()
-    return sensors, controllers, mech
+    def find_devices(self):
+        sensors = self.find_sensors()
+        controllers = self.find_controllers()
+        mech = self.find_mech()
+        return sensors, controllers, mech
 
-## actions.
-def connect(devices):
-    for device in devices:
-        try:
-            device.connect()
-        except:
-            printf('Cannot connect to device, '+str(device), 'warning')
+    ## actions.
+    def connect(self, devices):
+        for device in devices:
+            try:
+                device.connect()
+            except:
+                printf('Cannot connect to device, '+str(device), 'warning')
 
-def disconnect(devices):
-    for device in devices:
-        try:
-            device.disconnect()
-        except:
-            printf('Cannot disconnect from device, '+str(device), 'warning')
+    def disconnect(self, devices):
+        for device in devices:
+            try:
+                device.disconnect()
+            except:
+                printf('Cannot disconnect from device, '+str(device), 'warning')
 
-def start_recording(devices, duration=0.0):
-    for device in devices:
-        try:
-            device.start_recording(duration=duration)
-        except:
-            printf('Cannot start recording with device, '+str(device), 'warning')
+    def start_recording(self, devices, duration=0.0):
+        for device in devices:
+            try:
+                device.start_recording(duration=duration)
+            except:
+                printf('Cannot start recording with device, '+str(device), 'warning')
 
-def stop_recording(devices):
-    for device in devices:
-        try:
-            device.stop_recording(duration=duration)
-        except:
-            printf('ERROR! Cannot stop recording with device, '+str(device), 'warning')
+    def stop_recording(self, devices):
+        for device in devices:
+            try:
+                device.stop_recording(duration=duration)
+            except:
+                printf('ERROR! Cannot stop recording with device, '+str(device), 'warning')
 
-def turn_on(devices):
-    for device in devices:
-        try:
-            device.turn_on(duration=duration)
-        except:
-            printf('ERROR! Cannot turn on device, '+str(device), 'warning')
+    def turn_on(self, devices):
+        for device in devices:
+            try:
+                device.turn_on(duration=duration)
+            except:
+                printf('ERROR! Cannot turn on device, '+str(device), 'warning')
 
-def turn_off(devices):
-    for device in devices:
-        try:
-            device.turn_off(duration=duration)
-        except:
-            printf('ERROR! Cannot turn off device, '+str(device), 'warning')
+    def turn_off(self, devices):
+        for device in devices:
+            try:
+                device.turn_off(duration=duration)
+            except:
+                printf('ERROR! Cannot turn off device, '+str(device), 'warning')
 
 
 # tests.
-def sableye():
-    sensors = find_sensors()
-    controllers = find_controllers()
-    mech = find_mech()
+def shadow_ball():
+    device_handler = Sableye()
+    sensors = device_handler.find_sensors()
+    controllers = device_handler.find_controllers()
+    mech = device_handler.find_mech()
 
 if __name__ == '__main__':
-    sableye()
+    shadow_ball()

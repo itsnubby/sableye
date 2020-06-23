@@ -1,2 +1,2 @@
 ### sableye applications ##  ) 0 o .
-For each of the following applications, make sure that the sableye package is downloaded using `pip install sableye`
+For each of the following applications, make sure that the sableye package is downloaded using `pip install .` from the root directory of this package. After, add `export PYTHONPATH=$HOME/.local/lib/python3.Y/site-packages:$PYTHONPATH` [where `Y` is the minor number of your Python 3 distribution] to your `bashrc`, type `source ~/.bashrc` to reload your bash configuration and make the package visible to calling Python scripts.
