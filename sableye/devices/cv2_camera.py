@@ -217,15 +217,16 @@ class CV2_Camera(Device):
         self.streaming.value = 1
         timestamp_label = self._check_wrist('label')
         self._set_picture_path(timestamp_label)
-        ret, frame = self.channel.read()
-        if ret:
-            self.printf('hi nub')
-            cv2.imwrite(self._picture_path, frame)
+        while(1<2):
+            ret, frame = self.channel.read()
+            if ret:
+                self.printf('hi nub')
+                cv2.imwrite(self._picture_path, frame)
+            break
         self.streaming.value = 0
 
     def _test_photo(self):
         # see if the picture is done been tekked.
-        time.sleep(0.3)
         if self.streaming.value > 0:
             time.sleep(0.3)
         else:
@@ -318,7 +319,6 @@ class CV2_Camera(Device):
         elif this_event == 'START_RECORDING_REQUEST_EVENT':
             self._next_state = 'RECORDING'
         elif this_event == 'TAKE_PICTURE_REQUEST_EVENT':
-            print('Got the pic req')
             self._next_state = 'TAKING_PICTURE'
         elif this_event == 'DISCONNECT_REQUEST_EVENT':
             self._next_state = 'DISCONNECTING'
@@ -392,13 +392,18 @@ class CV2_Camera(Device):
 
 def __test__cv2_camera():
     cv2_cameras = find_cv2_cameras()
-    while 1<2:
-        try:
-            for cv2_camera in cv2_cameras:
-                cv2_camera.connect()
-            for cv2_camera in cv2_cameras:
-                if not cv2_camera._wait_for_('STANDING_BY'):
-                    cv2_cameras.remove(cv2_camera)
+    try:
+        for cv2_camera in cv2_cameras:
+            cv2_camera.connect()
+            # start a pool of processes.
+        time.sleep(3)
+        for cv2_camera in cv2_cameras:
+            if not cv2_camera.state == 'STANDING_BY':
+                print('Deleting camera '+str(cv2_camera))
+                cv2_camera.disconnect()
+                cv2_cameras.remove(cv2_camera)
+                del cv2_camera
+        while 1<2:
 #            for cv2_camera in cv2_cameras:
 #                cv2_camera.start_recording()
 #            time.sleep(5)
@@ -409,12 +414,10 @@ def __test__cv2_camera():
             print('Now trying to take a pic')
             for cv2_camera in cv2_cameras:
                 cv2_camera.take_picture()
-            for cv2_camera in cv2_cameras:
-                cv2_camera.disconnect()
-            break
-            time.sleep(5)
-        except KeyboardInterrupt:
-            break
+            time.sleep(2)
+    except KeyboardInterrupt:
+        for cv2_camera in cv2_cameras:
+            cv2_camera.disconnect()
 
 if __name__ == '__main__':
     __test__cv2_camera()
