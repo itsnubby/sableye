@@ -16,10 +16,12 @@ import os, sys, datetime, copy, json, copy
 # Maintain Python2 compatibility...FOOLISHLY.
 try:
     from .devices.usb_camera import USB_Camera, find_usb_cameras
+    from .devices.adc import ADS1115
     from .alakazam import sort
     from .squawk import ask, say
 except:
     from devices.usb_camera import USB_Camera, find_usb_cameras
+    from devices.adc import ADS1115
     from alakazam import sort
     from squawk import ask, say
 #finally:

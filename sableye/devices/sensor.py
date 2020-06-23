@@ -3,13 +3,13 @@ sensor.py - A pretty generic superclass for sensors.
 sableye - sensor interface
 Public:
     * Sensor(Device)
-modified : 4/17/2020
+modified : 5/5/2020
   ) 0 o .
 """
 try:
-    from .device import Device, say
+    from .device import Device, __SUPPORTED_EVENTS, say
 except:
-    from device import Device, say
+    from device import Device, __SUPPORTED_EVENTS, say
 
 
 class Sensor(Device):
@@ -44,6 +44,13 @@ class Sensor(Device):
         """
         # 'sensor' if not redefined.
         return '-'.join(['sensor',str(label)])
+
+    def _set_streaming_duration(self, duration):
+        """
+        Set the duration of recording session before starting here.
+        :in: duration (float) Streaming time [s]
+        """
+        self._stream_duration = duration
 
     def _stream(self):
         """
