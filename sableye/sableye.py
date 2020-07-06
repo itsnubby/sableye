@@ -6,9 +6,11 @@ modified : 5/30/2020
 import re
 try:
     from .devices.i2c_adc import ADS1115, find_i2c_devices
-    from .devices.cv2_camera import CV2_Camera, find_cv2_cameras
 except:
     from devices.i2c_adc import ADS1115, find_i2c_devices
+try:
+    from .devices.cv2_camera import CV2_Camera, find_cv2_cameras
+except:
     from devices.cv2_camera import CV2_Camera, find_cv2_cameras
 
 
@@ -100,6 +102,13 @@ class Sableye():
             except:
                 printf('ERROR! Cannot turn off device, '+str(device), 'warning')
 
+    def take_picture(self, sensors):
+        for sensor in sensors:
+            try:
+                sensor.take_picture()
+            except:
+                printf('WARNING: Cannot take picture with sensor, '+str(sensor), 'warning')
+
 
 # tests.
 def shadow_ball():
@@ -108,5 +117,12 @@ def shadow_ball():
     controllers = device_handler.find_controllers()
     mech = device_handler.find_mech()
 
+def lapse_time():
+    device_handler = Sableye()
+    sensors = device_handler.find_sensors()
+    device_handler.connect(sensors)
+
+
 if __name__ == '__main__':
-    shadow_ball()
+    lapse_time()
+    #shadow_ball()

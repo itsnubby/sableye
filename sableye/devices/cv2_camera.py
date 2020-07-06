@@ -4,10 +4,11 @@ sableye - sensor interface
 Public:
     * CV2_Camera(Sensor)
     * find_cv2_cameras()
-modified : 5/26/2020
+modified : 7/6/2020
      ) 0 o .
 """
-import cv2, glob, time, os, datetime, multiprocessing
+import sys, copy, cv2, glob, time, os, datetime, multiprocessing
+import subprocess as sp
 try:
     from .device import Device, _MIN_PRIORITY, _MAX_PRIORITY, _DEFAULT_PRIORITY
 except:
@@ -30,15 +31,56 @@ _RESOLUTIONS = {
 
 
 ## module definitions. [TODO : make part of interface class]
-def find_cv2_addresses():
-    cv2_addresses = list(range(0,8,1))
-    for address in cv2_addresses:
-        channel = cv2.VideoCapture(address)
-        if channel is None or not channel.isOpened():
-            cv2_addresses.remove(address)
-        channel.release()
-        cv2.destroyAllWindows()
-    return cv2_addresses
+def _parse_v4l2_info(v4l2_str):
+    device_fields = v4l2_str.split(' ')
+    device_class = device_fields[0].split(':')[0]
+    device_name = device_fields[1]
+    device_mac = device_fields[2][1:-2]
+    device_info = {
+            'device_name': device_name,
+            'device_class': device_class,
+            'device_mac_address': device_mac,
+            'device_ports': []
+            }
+    return device_info
+    
+def _add_camera_port(port, device_info):
+    port_nums = []
+    device_info['device_ports'].append(port)
+    for port in device_info['device_ports']:
+        try:
+            port_nums.append(int(port.split('/dev/video')[1]))
+        except:
+            print('Warning! Video port format not recognized')
+    device_info['device_cv2_index'] = min(port_nums)
+
+def find_v4l2_info():
+    cv2_devices_info = []
+    _shellosh = [
+            'v4l2-ctl',
+            '--list-devices'
+            ]
+    try:
+        _cv2_list_proc = sp.Popen(_shellosh, stdout=sp.PIPE)
+    except:
+        print('Could not communicate with that darn shell!')
+        return cv2_devices_info
+    # parse out cv2 info.
+    _address_indic = '/dev/video'
+    device_info = {}
+    _cv2_info = str(_cv2_list_proc.communicate()[0].decode(encoding='UTF-8')).strip()
+    for _cv2_line_str in _cv2_info.split('\n'):
+#        _cv2_line_str = str(_cv2_list_proc.stdout.readline().decode(encoding='UTF-8')).strip()
+        # exit loop if out of lines.
+        if _cv2_line_str == '':
+            continue
+        # check for camera labels.
+        elif not _address_indic in _cv2_line_str:
+            device_info = _parse_v4l2_info(_cv2_line_str)
+            cv2_devices_info.append(device_info)
+        else:
+            _add_camera_port(_cv2_line_str, device_info)
+    return cv2_devices_info
 
 def find_cv2_cameras():
     """
@@ -46,9 +88,16 @@ def find_cv2_cameras():
     :out: cv2_cameras [CV2_Camera]
     """
     cv2_cameras = []
-    cv2_addresses = find_cv2_addresses()
-    for unique_id, address in enumerate(cv2_addresses):
-        cv2_cameras.append(CV2_Camera(str(unique_id), address))
+    cv2_devices_info = find_v4l2_info()
+    for device_info in cv2_devices_info:
+        cv2_label = '-'.join([
+            device_info['device_name'],
+            str(device_info['device_cv2_index'])])
+        cv2_cameras.append(
+                CV2_Camera(
+                    cv2_label,
+                    device_info['device_cv2_index'],
+                    info=device_info))
     return cv2_cameras
 
 
@@ -57,7 +106,7 @@ class CV2_Camera(Device):
     Device class for USB-/OpenCV-enabled cameras.
     """
 
-    def __init__(self, label, address):
+    def __init__(self, label, address, info={}):
         try:
             super().__init__(label, address)
         except:
@@ -387,7 +436,9 @@ class CV2_Camera(Device):
         """
         # TODO: add state check.
         self._incoming_requests.put((_DEFAULT_PRIORITY, 'TAKE_PICTURE'))
+        print('Wow, put request into queue : '+str(self))
         self._wait_for_('TAKING_PICTURE')
+        print('WOWO, taking pic... : '+str(self))
 
 
 def __test__cv2_camera():
