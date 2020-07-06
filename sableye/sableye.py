@@ -84,7 +84,7 @@ class Sableye():
     def stop_recording(self, devices):
         for device in devices:
             try:
-                device.stop_recording(duration=duration)
+                device.stop_recording()
             except:
                 printf('ERROR! Cannot stop recording with device, '+str(device), 'warning')
 
