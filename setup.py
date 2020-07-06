@@ -4,7 +4,7 @@ with open("README.md", "r") as nerd:
     long_description = nerd.read()
 
 setuptools.setup(
-        name="korok",
+        name="sableye",
         version="0.0.9",
         author="nubby",
         author_email="nubby@mail.com",
