@@ -34,8 +34,12 @@ _RESOLUTIONS = {
 def _parse_v4l2_info(v4l2_str):
     device_fields = v4l2_str.split(' ')
     device_class = device_fields[0].split(':')[0]
-    device_name = device_fields[1]
-    device_mac = device_fields[2][1:-2]
+    try:
+        device_mac = device_fields[2][1:-2]
+        device_name = device_fields[1]
+    except:
+        device_mac = ''
+        device_name = device_fields[1]
     device_info = {
             'device_name': device_name,
             'device_class': device_class,
@@ -76,7 +80,11 @@ def find_v4l2_info():
             continue
         # check for camera labels.
         elif not _address_indic in _cv2_line_str:
-            device_info = _parse_v4l2_info(_cv2_line_str)
+            # ensure that camera is a USB camera or continue (TODO : add picams).
+            try:
+                device_info = _parse_v4l2_info(_cv2_line_str)
+            except:
+                continue
             cv2_devices_info.append(device_info)
         else:
             _add_camera_port(_cv2_line_str, device_info)
@@ -90,6 +98,9 @@ def find_cv2_cameras():
     cv2_cameras = []
     cv2_devices_info = find_v4l2_info()
     for device_info in cv2_devices_info:
+        # skip picamera entries for now.
+        if device_info['device_cv2_index'] > 9:
+            continue
         cv2_label = '-'.join([
             device_info['device_name'],
             str(device_info['device_cv2_index'])])
