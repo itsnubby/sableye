@@ -5,13 +5,13 @@ with open("README.md", "r") as nerd:
 
 setuptools.setup(
         name="sableye",
-        version="0.0.9",
+        version="1.0.0",
         author="nubby",
         author_email="nubby@mail.com",
         description="the tiny radish-rover",
         long_description=long_description,
         long_description_content_type="text/markdown",
-        url="https://github.com/itsnubby/korok.git",
+        url="https://github.com/itsnubby/sableye.git",
         packages=setuptools.find_packages(),
         classifiers=[
             "Programming Language :: Python :: 3",      # 2 has limited funkitude.
