@@ -25,9 +25,11 @@ def _set_up(base_path='./'):
 def _run():
     global sensors, device_handler
     while(1<2):
-        print('Trying to take a pic eh?')
-        device_handler.take_picture(sensors)
-        time.sleep(1)
+        #device_handler.take_picture(sensors)
+        device_handler.start_recording(sensors)
+        time.sleep(30)
+        device_handler.stop_recording(sensors)
+        time.sleep(30)
 
 
 def lapse_time(path='./'):
