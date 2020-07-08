@@ -33,7 +33,8 @@ class Device(ESMachine):
     """
     Your one-stop-shop for device communications.
     """
-    def __init__(self, label, address):
+    def __init__(self, label, address,
+            base_path='./test_data/'):
         """
         To inherit:
             * redefine _fill_info and _get_device_id appropriately.
@@ -61,7 +62,8 @@ class Device(ESMachine):
         self._shared_space_queue = multiprocessing.Queue()      # pass this to processes that need to make changes to shared memory space.
         # set up logging.
         self._metadata_path, self._data_path = '', ''
-        self._base_path = './test_data/'
+        self._base_path = ''
+        self.set_base_path(base_path)
         self._set_file_paths()
         # start yer daemon up.
         self.run()
@@ -204,7 +206,6 @@ class Device(ESMachine):
                 except:
                     self.printf('Coudn\'t mkdir '+_full_path)
 
-
     def _set_file_paths(self):
         if not os.path.isdir(self._base_path):
             print(str(self._base_path))
@@ -226,6 +227,15 @@ class Device(ESMachine):
             '_'.join([
                 self._base_path+timestamp_label,
                 str(self)]), _file_extension])
+
+
+    def set_base_path(self, base_path):
+        # Call as a part of set up if needed.
+        # make sure that base path is a valid dir.
+        if not base_path[-1] == '/':
+            base_path += '/'
+        self._base_path = base_path
+        self._set_file_paths()
 
     # metadata generation.
     def _fill_info(self):
@@ -275,6 +285,18 @@ class Device(ESMachine):
             time.sleep(0.3)
         if self.state != state:
             return False
+        return True
+    
+    def wait(self):
+        timeout = 30.0      # seconds.
+        current_state = self.state
+        start_time = self._check_wrist('epoch')
+        while self.state == current_state:
+            time.sleep(0.1)
+            current_time = self._check_wrist('epoch')
+            elapsed = current_time - start_time
+            if elapse > timeout:
+                return False
         return True
 
     def _sleep(self, this_event):

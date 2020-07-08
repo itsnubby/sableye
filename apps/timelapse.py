@@ -41,7 +41,7 @@ def lapse_time(path='./'):
 
 def parse():
     parser = argparse.ArgumentParser(description='collect data blurbs indefinitely.')
-    parser.add_argument('--path', type=str, default='~/pkgs/sableye/apps/test_data/', help='data path')
+    parser.add_argument('--path', type=str, default='./test_data/', help='data path')
     return parser.parse_args()
 
 if __name__ == '__main__':
