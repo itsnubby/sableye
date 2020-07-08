@@ -2,7 +2,7 @@
 timelapse.py
      ) 0 o .
 """
-import time
+import sys, time, argparse
 from sableye.sableye import Sableye
 
 
@@ -10,10 +10,11 @@ from sableye.sableye import Sableye
 device_handler = None
 sensors = []
 
-def _set_up():
+def _set_up(base_path='./'):
     global sensors, device_handler
-    device_handler = Sableye()
-    sensors = device_handler.find_sensors()
+    device_handler = Sableye(base_path=base_path)
+    device_handler.set_up(base_path=base_path)
+    print(str(sensors))
     device_handler.connect(sensors)
     time.sleep(3)
     for sensor in sensors:
@@ -29,12 +30,18 @@ def _run():
         time.sleep(1)
 
 
-def lapse_time():
+def lapse_time(path='./'):
     try:
-        _set_up()
+        _set_up(base_path=path)
         _run()
     except KeyboardInterrupt:
         print('kraw')
 
+def parse():
+    parser = argparse.ArgumentParser(description='collect data blurbs indefinitely.')
+    parser.add_argument('--path', type=str, default='~/pkgs/sableye/apps/test_data/', help='data path')
+    return parser.parse_args()
+
 if __name__ == '__main__':
-    lapse_time()
+    parsed = parse()
+    lapse_time(path=parsed.path)
