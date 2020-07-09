@@ -27,9 +27,9 @@ def _run():
     while(1<2):
         #device_handler.take_picture(sensors)
         device_handler.start_recording(sensors)
-        time.sleep(30)
+        time.sleep(5)
         device_handler.stop_recording(sensors)
-        time.sleep(30)
+        time.sleep(55)
 
 
 def lapse_time(path='./'):
