@@ -17,6 +17,11 @@ except:
     from Queue import PriorityQueue
 # for testing.
 import sys, time
+
+
+## glabols.
+DEBUG = False       # DEBUG = True == printing allowed.
+
 # TODO : add states as a dictionary with handler and events -> actions defined.
 
 # non-blocking thread.
@@ -80,7 +85,7 @@ class Timer(object):
         :in: kwargs {*}
         :out: thread (Thread)
         """
-        print('Starting thread, '+str(name))
+        #print('Starting thread, '+str(name))
         thread = threading.Thread(target=target, name=name, args=args, kwargs=kwargs)
         thread.daemon = True
         thread.start()
@@ -92,7 +97,7 @@ class Timer(object):
     def set(self, duration):
         if not self.active.value > 0:
             self.duration = duration
-        else:
+        elif DEBUG:
             say('Cannot set an active timer')
 
     def start(self):
@@ -111,7 +116,7 @@ class Timer(object):
         for _thread in self._active_threads:
             while _thread.isAlive():
                 time.sleep(0.1)
-                print('Waiting for thread, '+str(_thread.name))
+                #print('Waiting for thread, '+str(_thread.name))
         self.__init__(self.duration)
 
     def _countdown(self):
@@ -129,7 +134,7 @@ class Timer(object):
                 time.sleep(0.3)
         self.active.value = 0
         self._end_time = _check_wrist('epoch')
-        print('Timer thread ended')
+        #print('Timer thread ended')
 
     def is_expired(self):
         if self.expired.value > 0:
@@ -156,7 +161,8 @@ class StateMachine(object):
         return self.label
 
     def printf(self, prompt, flag=''):
-        say(str(self)+' : '+prompt, flag)
+        if DEBUG:
+            say(str(self)+' : '+prompt, flag)
 
     ## helper functions.
     # process and thread management.
@@ -168,7 +174,7 @@ class StateMachine(object):
         :in: kwargs {*}
         :out: process (Process)
         """
-        print('Starting process, '+str(name))
+        #print('Starting process, '+str(name))
         process = multiprocessing.Process(target=target, args=args, kwargs=kwargs)
         process.daemon = True
         process.start()
@@ -185,7 +191,7 @@ class StateMachine(object):
         :in: kwargs {*}
         :out: thread (Thread)
         """
-        print('Starting thread, '+str(name))
+        #print('Starting thread, '+str(name))
         thread = threading.Thread(target=target, name=name, args=args, kwargs=kwargs)
         thread.daemon = True
         thread.start()
@@ -202,7 +208,7 @@ class StateMachine(object):
         process.join()
         if not process.is_alive():
             self._active_processes.remove(process)
-            print('Ending process, '+str(process.name))
+            #print('Ending process, '+str(process.name))
 
     def _kill_processes(self):
         """
@@ -228,7 +234,7 @@ class StateMachine(object):
             if not thread.isAlive():
                 self.printf(' '.join([thread.name,'terminated']), 'success')
                 self._active_threads.remove(thread)
-                print('Ending thread, '+str(process.name))
+                #print('Ending thread, '+str(process.name))
                 return True
         return False
 
